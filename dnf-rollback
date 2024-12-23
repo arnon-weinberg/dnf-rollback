@@ -1,0 +1,141 @@
+#!/bin/env python3
+
+import argparse
+import os, sys, subprocess
+import re, rpm
+import tempfile
+import functools
+print = functools.partial(print, flush=True) # Auto-flush output
+
+parser = argparse.ArgumentParser ( description = 'DNF Rollback' )
+
+group1 = parser.add_mutually_exclusive_group(required=True)
+group1.add_argument('--tid', type=str,
+                    help='Use package list at transaction_id')
+group1.add_argument('--pkgs', type=str, metavar='FILE',
+                    help='Load package list from file')
+
+group2 = parser.add_mutually_exclusive_group()
+group2.add_argument('--dump', action='store_true',
+                    help='Dump package list [default]')
+group2.add_argument('--comm', action='store_true',
+                    help='List dnf commands to rollback')
+group2.add_argument('--exec', action='store_true',
+                    help='Run dnf commands to rollback')
+
+parser.add_argument('args', nargs='*', metavar='-- options',
+                    help='Additional options to dnf shell')
+
+opt = parser.parse_args()
+if not ( opt.comm or opt.exec ): opt.dump = True
+
+if opt.tid and not re.match(r'^last|(last-)?\d+$', opt.tid):
+  parser.error(f"argument --tid: invalid transaction_id: '{opt.tid}'")
+if opt.args and not opt.exec:
+  parser.error(f"unrecognized arguments: {' '.join(opt.args)}")
+for arg in opt.args:
+  if arg[0] != '-': parser.error(f"unrecognized argument: {arg}")
+
+def capture(command):
+  return subprocess.run(command,
+           capture_output=True, text=True, check=True
+         ).stdout
+
+pkg = { ls: {} for ls in ['old', 'new', 'pkg'] }
+
+# Currently installed packages:
+for package in capture(['rpm', '-qa']).splitlines():
+  package = package.strip()
+  pkg['new'][package] = None
+
+# Use package list at transaction_id:
+
+if opt.tid:
+  pkg['old'] = pkg['new'].copy()
+
+  tid2 = int(capture(['dnf', 'history', 'last']).splitlines()[2].split('|')[0].strip())
+  if opt.tid == 'last':
+    tid1 = tid2
+  elif match := re.match(r'^last-(\d+)$', opt.tid):
+    tid1 = tid2 - int(match.group(1))
+  else:
+    tid1 = int(opt.tid)
+
+  # Process dnf transaction history:
+  print('Processing', file=sys.stderr, end='')
+  for tid in range(tid2, tid1, -1):
+    for line in capture(['dnf', 'history', 'info', str(tid)]).splitlines():
+      if ( match := re.match(r'^\s+(?:\*+\s+)?(\w+(?:\s\w+)?)\s+(\S+)\s+\@\S+', line) ):
+        action, package = match.groups()
+        package = re.sub(r'-\d+:', '-', package)
+        if   re.match(r'^(Reinstall(ed)?|Reason Change)$', action):
+          if package not in pkg['old']:
+            print(f"ERROR: {action} - {package} not installed.", file=sys.stderr)
+            sys.exit(1)
+        elif re.match(r'^(Install|Upgrade|Downgrade)$', action):
+          if package not in pkg['old']:
+            print(f"ERROR: {action} - {package} not installed.", file=sys.stderr)
+            sys.exit(1)
+          pkg['old'].pop(package, None)
+        elif re.match(r'(Removed|Upgraded|Downgraded|Obsoleted)$', action):
+          if package in pkg['old']:
+            print(f"ERROR: {action} - {package} already exists.", file=sys.stderr)
+            sys.exit(1)
+          pkg['old'][package] = None
+        else:
+          print(f"ERROR: {action} - action unsupported.", file=sys.stderr)
+          sys.exit(1)
+    print('.', file=sys.stderr, end='')
+  print('', file=sys.stderr)
+
+# Load package list from file:
+
+elif opt.pkgs:
+  with ( sys.stdin if opt.pkgs == '-' else open(opt.pkgs, 'r') ) as f:
+    for package in f:
+      package = package.strip()
+      pkg['old'][package] = None
+
+# Dump package list:
+
+if opt.dump:
+  for package in sorted(pkg['old'].keys()):
+    print(package)
+
+else:
+  # Skip unchanged packages:
+  for package in list(pkg['old'].keys()):
+    if package in pkg['new']:
+      pkg['old'].pop(package)
+      pkg['new'].pop(package)
+    elif match := re.match(r'^(.+)-[^-]+-[^-]+\.[^.-]+$', package):
+      if not re.match(r'^kernel-', package):
+        pkg['pkg'][match.group(1)] = None
+  # Skip protected packages:
+  kernel = r'kernel-(.*-)?'+re.escape(capture(['uname', '-r']).strip())+r'$'
+  for package in list(pkg['new'].keys()):
+    p = re.match(r'^(.+)-[^-]+-[^-]+\.[^.-]+$', package)
+    p = p.group(1) if p else ''
+    if re.match(kernel, package) or p in pkg['pkg']:
+      pkg['new'].pop(package)
+
+  # Generate dnf shell commands:
+  commands = ''
+  if pkg['old'].keys():
+    commands += f"install {' '.join(pkg['old'].keys())}\n"
+  if pkg['new'].keys():
+    commands += f"remove {' '.join(pkg['new'].keys())}\n"
+  if commands: commands += 'run\n'
+
+  # List dnf commands to rollback:
+
+  if not opt.exec:
+    print(commands, end='')
+
+  # Run dnf commands to rollback:
+
+  else:
+    with tempfile.NamedTemporaryFile() as tempfile:
+      tempfile.write(commands.encode())
+      tempfile.flush()
+      subprocess.run(['sudo', 'dnf', 'shell', tempfile.name] + opt.args)

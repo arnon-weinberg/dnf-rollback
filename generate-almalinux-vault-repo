@@ -1,0 +1,26 @@
+#!/bin/env python3
+
+import subprocess
+
+version = subprocess.run(
+  ['rpm', '-q', '--queryformat', '%{VERSION}', 'almalinux-release'],
+  capture_output=True, text=True, check=True
+).stdout.strip()
+major, minor = version.split('.')
+
+repo = ''
+for version in range(int(minor) - 1, -1, -1):
+  version = f"{major}.{version}"
+  for type in ['BaseOS', 'AppStream', 'CRB']:
+    repo += f"""
+[{type.lower()}-{version}]
+name=AlmaLinux {version} - {type}
+baseurl=https://vault.almalinux.org/{version}/{type}/$basearch/os/
+enabled=0
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9
+metadata_expire=86400
+enabled_metadata=0
+"""
+
+print(repo[1:], end='')
