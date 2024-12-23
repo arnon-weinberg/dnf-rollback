@@ -10,12 +10,18 @@ where 123 is the dnf history transaction ID.
 
 ### Installation:
 
-This script uses python3
-Note: Only tested on AlmaLinux 9 - may work on other RHEL-based distros.
+This script uses python3. Note: Only tested on AlmaLinux 9 - may work on other RHEL-based distros.
 
 ```
 >wget https://github.com/arnon-weinberg/dnf-rollback/raw/master/dnf-rollback
 >chmod +x dnf-rollback
+```
+
+or download the project:
+
+```
+>git clone https://github.com/arnon-weinberg/dnf-rollback.git`
+>cd dnf-rollback
 ```
 
 ### Details:
@@ -24,7 +30,7 @@ I find that dnf history rollback often just does not work. The [docs](https://do
 
 > Downgrading RHEL system packages to an older version by using the dnf history undo and dnf history rollback command is not supported. This concerns especially the selinux, selinux-policy-*, kernel, and glibc packages, and dependencies of glibc such as gcc. Therefore, downgrading a system to a minor version (for example, from RHEL 9.1 to RHEL 9.0) is not recommended because it might leave the system in an incorrect state.
 
-But there are many other problems: Error messages are incomprehensible, packages are missed, and the operation is atomic, so often the entire rollback fails because of one package.
+But there are many other problems: Error messages are incomprehensible, packages are missed, and the operation is atomic, so the entire rollback may fail because of one package.
 
 If dnf history rollback works for you, then great. Otherwise, use this script to help debug problems, or as an alternative to dnf history rollback. The following is a tutorial on how to roll back transactions.
 
@@ -74,7 +80,7 @@ If no customization is needed, then it's possible to do this:
 
 `>(dnf-rollback --pkgs=pkgs.123 --comm && cat) | sudo dnf shell`
 
-Though this will leave you in the shell, so you'll need to exit manually. Alternatively, you can just:
+Though this will leave you in the shell, so you'll need to exit manually. Alternatively, just use:
 
 `>dnf-rollback --pkgs=pkgs.123 --exec`
 
@@ -94,7 +100,7 @@ To pass additional arguments to dnf shell, use:
 
 arguments after `--` are passed to dnf shell.
 
-A note about the vault:
+**Missing packages and repos:**
 
 Rolling back to previous system versions is often stymied by missing or disabled repos. AlmaLinux moves older packages to the vault repos, but does not provide a repo file for the vaults. To generate a repo file for the vault, I use:
 
@@ -113,3 +119,19 @@ Then enable them as required:
 `>sudo dnf config-manager --set-enabled baseos-9.4`
 
 etc. Remember to disable them when done the rollback.
+
+For other missing packages, I recommend setting up a local repo:
+
+```
+>mkdir -p /usr/src/redhat/RPMS/x86_64/ALM9
+>sudo createrepo /usr/src/redhat/RPMS/x86_64/ALM9
+>cat <<EOF | sudo tee /etc/yum.repos.d/local.repo >/dev/null
+[extras-local]
+name=Local Repository
+baseurl=file:///usr/src/redhat/RPMS/$basearch/ALM9
+enabled=1
+gpgcheck=0
+EOF
+```
+
+and adding missing packages to it from online sources. A rollback can often be done iteratively, adding packages to the local repo as you find them.

@@ -1,11 +1,17 @@
 #!/bin/env python3
 
+import builtins
 import argparse
 import os, sys, subprocess
 import re, rpm
 import tempfile
-import functools
-print = functools.partial(print, flush=True) # Auto-flush output
+
+def print(*args, **kwargs): # Auto-flush output
+  try:
+    builtins.print(*args, **kwargs, flush=True)
+  except (BrokenPipeError, ConnectionResetError):
+    sys.stdout = None
+    sys.exit(0)
 
 parser = argparse.ArgumentParser ( description = 'DNF Rollback' )
 
