@@ -136,7 +136,7 @@ EOF
 
 and adding missing packages to it from online sources. A rollback can often be done iteratively, adding packages to the local repo as you find them.
 
-** Kernel packages: **
+**Kernel packages:**
 
 dnf handles Kernel packages specially. Kernels are not upgraded/downgraded, but simply installed/removed, and there is a configured limit (`dnf config-manager --dump | grep '^installonly_limit '`) on the number of kernels that may be installed simultaneously.
 
