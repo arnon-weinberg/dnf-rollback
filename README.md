@@ -135,3 +135,13 @@ EOF
 ```
 
 and adding missing packages to it from online sources. A rollback can often be done iteratively, adding packages to the local repo as you find them.
+
+** Kernel packages: **
+
+dnf handles Kernel packages specially. Kernels are not upgraded/downgraded, but simply installed/removed, and there is a configured limit (`dnf config-manager --dump | grep '^installonly_limit '`) on the number of kernels that may be installed simultaneously.
+
+One issue this poses is that rolling back to a system with all kernel versions replaced requires multiple steps. The current running kernel cannot be removed, so one of the previous kernels cannot be installed right away, as that would exceed the kernel limit. After rolling back what is possible, and rebooting to a different kernel, then the current kernel version can be replaced with the remaining previous kernel version.
+
+Complicating matters further, sometimes removing a kernel version does not automatically remove all of its dependencies. However, installing an orphaned kernel-* sub-package requires installing the corresponding kernel version as a dependency, taking up another kernel slot. Thus, rolling back to a system with orphaned kernel-* sub-packages is even more complicated.
+
+dnf history rollback is not good at handling any of this, and usually just gives up. dnf-rollback on the other hand is careful not to install too many kernels at a time. You will still need to reboot to a different kernel to replace the currently running one, but then just run dnf-rollback again to complete the process.

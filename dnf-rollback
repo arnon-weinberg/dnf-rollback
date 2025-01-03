@@ -109,21 +109,39 @@ if opt.dump:
     print(package)
 
 else:
+  kernel_version = capture(['uname', '-r']).strip() # Current running kernel
+  pkg['pkg'] = { '_kernel': {}, '_kernel-*': {} } # kernels and sub-packages
   # Skip unchanged packages:
   for package in list(pkg['old'].keys()):
     if package in pkg['new']:
       pkg['old'].pop(package)
       pkg['new'].pop(package)
-    elif match := re.match(r'^(.+)-[^-]+-[^-]+\.[^.-]+$', package):
-      if not re.match(r'^kernel-', package):
+    elif match := re.match(r'^(.+)-([^-]+-[^-]+)\.[^.-]+$', package):
+      if re.match(r'kernel-(.*-)?'+re.escape(kernel_version.split('-')[0])+r'-', package):
+        pkg['pkg']['_kernel-*'][package] = None
+        if match.group(1) == 'kernel':
+          pkg['pkg']['_kernel'][match.group(2)] = None
+      else:
         pkg['pkg'][match.group(1)] = None
-  # Skip protected packages:
-  kernel = r'kernel-(.*-)?'+re.escape(capture(['uname', '-r']).strip())+r'$'
+  # Skip upgraded/downgraded packages:
+  kernels = 0 # kernels removed
   for package in list(pkg['new'].keys()):
     p = re.match(r'^(.+)-[^-]+-[^-]+\.[^.-]+$', package)
     p = p.group(1) if p else ''
-    if re.match(kernel, package) or p in pkg['pkg']:
+    if p in pkg['pkg'] or \
+       re.match(r'kernel-(.*-)?'+re.escape(kernel_version)+r'$', package):
+      if p == 'kernel': print(f"WARN: Cannot remove running kernel - {package}.", file=sys.stderr)
       pkg['new'].pop(package)
+    elif p == 'kernel':
+      kernels += 1
+  # Careful not to install too many kernels:
+  while len(pkg['pkg']['_kernel'].keys()) > kernels:
+    pkg['pkg']['_kernel'].popitem()
+  for package in pkg['pkg']['_kernel-*'].keys():
+    v = re.match(r'^.+-([^-]+-[^-]+)\.[^.-]+$', package)
+    if v and v.group(1) not in pkg['pkg']['_kernel'].keys():
+      print(f"WARN: Insufficient kernel slots to install - {package}.", file=sys.stderr)
+      pkg['old'].pop(package)
 
   # Generate dnf shell commands:
   commands = ''
