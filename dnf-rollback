@@ -42,7 +42,8 @@ if opt.args and not opt.exec:
 for arg in opt.args:
   if arg[0] != '-': parser.error(f"unrecognized argument: {arg}")
 
-def capture(command):
+def capture(command): # Capture command output
+  if isinstance(command, str): command = command.split()
   return subprocess.run(command,
            capture_output=True, text=True, check=True
          ).stdout
@@ -50,7 +51,7 @@ def capture(command):
 pkg = { ls: {} for ls in ['old', 'new', 'pkg'] }
 
 # Currently installed packages:
-for package in capture(['rpm', '-qa']).splitlines():
+for package in capture('rpm -qa').splitlines():
   package = package.strip()
   pkg['new'][package] = None
 
@@ -59,7 +60,7 @@ for package in capture(['rpm', '-qa']).splitlines():
 if opt.tid:
   pkg['old'] = pkg['new'].copy()
 
-  tid2 = int(capture(['dnf', 'history', 'last']).splitlines()[2].split('|')[0].strip())
+  tid2 = int(capture('dnf history last').splitlines()[2].split('|')[0].strip())
   if opt.tid == 'last':
     tid1 = tid2
   elif match := re.match(r'^last-(\d+)$', opt.tid):
@@ -70,7 +71,7 @@ if opt.tid:
   # Process dnf transaction history:
   print('Processing', file=sys.stderr, end='')
   for tid in range(tid2, tid1, -1):
-    for line in capture(['dnf', 'history', 'info', str(tid)]).splitlines():
+    for line in capture(f"dnf history info {str(tid)}").splitlines():
       if ( match := re.match(r'^\s+(?:\*+\s+)?(\w+(?:\s\w+)?)\s+(\S+)\s+\@\S+', line) ):
         action, package = match.groups()
         package = re.sub(r'-\d+:', '-', package)
@@ -109,7 +110,7 @@ if opt.dump:
     print(package)
 
 else:
-  kernel_version = capture(['uname', '-r']).strip() # Current running kernel
+  kernel_version = capture('uname -r').strip() # Current running kernel
   pkg['pkg'] = { '_kernel': {}, '_kernel-*': {} } # kernels and sub-packages
   # Skip unchanged packages:
   for package in list(pkg['old'].keys()):
