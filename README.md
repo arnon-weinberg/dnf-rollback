@@ -20,7 +20,7 @@ This script uses python3. Note: Only tested on AlmaLinux 9 - may work on other R
 or download the project:
 
 ```
->git clone https://github.com/arnon-weinberg/dnf-rollback.git`
+>git clone https://github.com/arnon-weinberg/dnf-rollback.git
 >cd dnf-rollback
 ```
 
